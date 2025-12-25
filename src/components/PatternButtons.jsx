@@ -23,6 +23,18 @@ export const PatternButtons = ({ onPatternChange }) => {
       >
         Pattern 2
       </button>
+      <button
+        className={`pattern-button ${activePattern === 2 ? 'active' : ''}`}
+        onClick={() => handlePatternClick(2)}
+      >
+        Pattern 3
+      </button>
+      <button
+        className={`pattern-button ${activePattern === 3 ? 'active' : ''}`}
+        onClick={() => handlePatternClick(3)}
+      >
+        Pattern 4
+      </button>
     </div>
   );
 };

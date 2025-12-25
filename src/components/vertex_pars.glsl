@@ -153,6 +153,39 @@ varying vec3 vPosition;
 varying vec2 vUv;
 varying float vDisplacement;
 
+
+#define MOD3 vec3(.1031,.11369,.13787)
+
+vec3 hash33(vec3 p3) {
+	p3 = fract(p3 * MOD3);
+    p3 += dot(p3, p3.yxz+19.19);
+    return -1.0 + 2.0 * fract(vec3((p3.x + p3.y)*p3.z, (p3.x+p3.z)*p3.y, (p3.y+p3.z)*p3.x));
+}
+
+float tnoise(vec3 p) {
+    vec3 pi = floor(p);
+    vec3 pf = p - pi;
+    vec3 w = pf * pf * (3. - 2.0 * pf);
+    return 	mix(
+        		mix(
+                	mix(dot(pf - vec3(0, 0, 0), hash33(pi + vec3(0, 0, 0))),
+                        dot(pf - vec3(1, 0, 0), hash33(pi + vec3(1, 0, 0))),
+                       	w.x),
+                	mix(dot(pf - vec3(0, 0, 1), hash33(pi + vec3(0, 0, 1))),
+                        dot(pf - vec3(1, 0, 1), hash33(pi + vec3(1, 0, 1))),
+                       	w.x),
+                	w.z),
+        		mix(
+                    mix(dot(pf - vec3(0, 1, 0), hash33(pi + vec3(0, 1, 0))),
+                        dot(pf - vec3(1, 1, 0), hash33(pi + vec3(1, 1, 0))),
+                       	w.x),
+                   	mix(dot(pf - vec3(0, 1, 1), hash33(pi + vec3(0, 1, 1))),
+                        dot(pf - vec3(1, 1, 1), hash33(pi + vec3(1, 1, 1))),
+                       	w.x),
+                	w.z),
+    			w.y);
+}
+
 // =================== Custom Noise-Based Texture Functions =================== //
 
 int windows = 0;
@@ -183,6 +216,31 @@ mat2 m2= mat2(.8,.6,-.6,.8);
 float gavoronoi3(in vec2 p)
 {    
     vec2 ip = floor(p);
+    vec2 fp = fract(p);
+    float f = 2.0*PI;//frequency
+    float v = 1.0;//cell variability <1.
+    float dv = 0.0;//direction variability <1.
+    vec2 dir = m += cos(uTime * 0.3);//vec2(.7,.7); += cos(uTime * 0.3)
+    float va = 0.0;
+   	float wt = 0.0;
+    for (int i=-1; i<=1; i++) 
+	for (int j=-1; j<=1; j++) 
+	{		
+    vec2 o = vec2(i, j)-.5;
+    vec2 h = hash2(ip - o);
+    vec2 pp = fp +o;
+    float d = dot(pp, pp);
+    float w = exp(-d*4.);
+    wt +=w;
+    h = dv*h+dir;//h=normalize(h+dir);
+    va += cos(dot(pp,h)*f/v)*w;
+	}    
+    return va/wt;
+}
+
+float gavoronoi(in vec2 p)
+{    
+    vec2 ip = floor(p += cos(uTime * 0.2));
     vec2 fp = fract(p);
     float f = 3.0*PI;//frequency
     float v = 1.0;//cell variability <1.
@@ -262,30 +320,31 @@ vec4 noisePattern1(vec3 coords){
 
 // Returns vec4: xyz = newPosition, w = displacement
 vec4 noisePattern2(vec2 coords){
-    vec3 light = normalize(vec3(3., 2., -1.));
-    vec2 animatedCoords = coords + uTime * 0.1;
-    float noise = dot(nor(animatedCoords), light);
-    float displacement = clamp(noise * 0.5 + 0.5, 0.0, 5.0);
-    
-    vec3 newPosition = position + normal * clamp(noise, 0.0, 0.1);
-    return vec4(newPosition, displacement);
+    float noiseValue = pnoise(position + uTime, vec3(10.0)) * 0.1;
+    float noiseHover = pnoise(position + uTime, vec3(10.0)) * 0.8;
+    float noiseMix = mix(noiseValue, noiseHover, abs(sin(uTime * 0.5)));
+    vec3 newPosition = position + normal * noiseMix;
+    return vec4(newPosition, noiseMix);
 }
 
 vec4 noisePattern3(vec3 coords){
-    vec3 noisePattern = vec3(cnoise(coords));
-    float pattern = bumpy(noisePattern);
-    float displacement = pattern / 2.0;
-    
-    vec3 newPosition = position + normal * displacement;
-    return vec4(newPosition, pattern);
+  vec3 tcoords = coords * 16.0;
+  tcoords.z += sin(uTime) * 1.4;
+  float pattern = tnoise(tcoords) * 0.2;
+  float proximity = abs(coords.x - (.5 + sin(uTime)/(22. * 1.2) ));
+
+  vec3 full = pattern * vec3(clamp(.23 * 1.2 - proximity , 0., 1.));
+  vec3 newPosition = position + normal * full; 
+  return vec4(newPosition, pattern);
 }
 
 vec4 noisePattern4(vec2 coords){
     vec3 light = normalize(vec3(3., 2., -1.));
-    vec2 animatedCoords = coords + uTime * 0.1;
-    float noise = dot(nor(animatedCoords), light);
-    float displacement = clamp(noise * 10.0 + 0.5, 0.0, 5.0);
+	  float noise = dot(nor(coords), light);
+
+    float displacement = clamp(noise, 0.0, 0.5);
     
-    vec3 newPosition = position + normal * clamp(noise, 0.0, 0.1);
+    vec3 newPosition = position + normal * clamp(1.0 - noise, 0.0, 0.3);
+    
     return vec4(newPosition, displacement);
 }

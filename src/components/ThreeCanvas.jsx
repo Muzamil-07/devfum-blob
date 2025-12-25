@@ -67,6 +67,7 @@ const Sphere = ({ targetPattern }) => {
     
     // Smoothly transition morphProgress
     if (material.userData.shader.uniforms.uMorphProgress) {
+      // Map pattern index (0-3) to morphProgress value (0-3)
       const target = targetPattern;
       const current = morphProgressRef.current;
       const transitionSpeed = 1.5; // Adjust for faster/slower transitions
