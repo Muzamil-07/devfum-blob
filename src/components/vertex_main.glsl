@@ -1,41 +1,29 @@
-// Use 'normal' (object space) instead of 'vNormal' (view space)
-vec3 coords = normal;  // <- CHANGED FROM vNormal
+
+vNormal = normal;
+vPosition = position;
+vUv = uv;
+
+vec3 coords = vNormal;
 coords.y += uTime * 0.1;
-vec3 noisePattern = vec3(cnoise(coords));
-// float strips = wave(noisePattern);
 
-// vDisplacement = strips;
-vDisplacement = noisePattern.y;  // <- CHANGED TO NOISE PATTERN Y COMPONENT
+// Calculate both noise patterns (each returns vec4 with position and displacement)
+vec4 pattern1 = noisePattern1(coords);
+// vec4 pattern2 = noisePattern3(coords);
+vec4 pattern2 = noisePattern2(vUv);
 
-float displacement = vDisplacement;
+vec4 pattern3 = noisePattern3(coords);
+vec4 pattern4 = noisePattern4(vUv);
 
-transformed += normal * displacement;
+// Smooth interpolation using smoothstep for better transition
+float smoothProgress = smoothstep(0.0, 1.0, uMorphProgress);
 
-// // Now recalculate the normal based on displacement gradient
-// float offset = 0.01;
+// Blend between the two patterns (positions)
+vec3 newPosition = mix(pattern1.xyz, pattern2.xyz, smoothProgress);
 
-// // Sample displacement at neighboring points
-// vec3 coordsX = normal + vec3(offset, 0.0, 0.0);
-// coordsX.y += uTime * 0.1;
-// float dispX = wave(vec3(cnoise(coordsX))) / 2.0;
+// Blend between the two displacements
+vDisplacement = mix(pattern1.w, pattern2.w, smoothProgress);
 
-// vec3 coordsY = normal + vec3(0.0, offset, 0.0);
-// coordsY.y += uTime * 0.1;
-// float dispY = wave(vec3(cnoise(coordsY))) / 2.0;
 
-// vec3 coordsZ = normal + vec3(0.0, 0.0, offset);
-// coordsZ.y += uTime * 0.1;
-// float dispZ = wave(vec3(cnoise(coordsZ))) / 2.0;
+float displacement = vDisplacement / 3.0;
 
-// // Calculate gradient
-// vec3 grad = vec3(
-//     dispX - displacement,
-//     dispY - displacement,
-//     dispZ - displacement
-// ) / offset;
-
-// // New normal is the original normal minus the gradient
-// vec3 displacedNormal = normalize(normal - grad * 0.5);
-
-// Transform to view space
-// vNormal = normalize(normalMatrix * displacedNormal);
+transformed += normalize(objectNormal) * displacement;

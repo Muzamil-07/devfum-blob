@@ -1,17 +1,3 @@
-//
-// GLSL textureless classic 3D noise "cnoise",
-// with an RSL-style periodic variant "pnoise".
-// Author:  Stefan Gustavson (stefan.gustavson@liu.se)
-// Version: 2024-11-07
-//
-// Many thanks to Ian McEwan of Ashima Arts for the
-// ideas for permutation and gradient selection.
-//
-// Copyright (c) 2011 Stefan Gustavson. All rights reserved.
-// Distributed under the MIT license. See LICENSE file.
-// https://github.com/stegu/webgl-noise
-//
-
 vec3 mod289(vec3 x)
 {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
@@ -161,6 +147,83 @@ float pnoise(vec3 P, vec3 rep)
 }
 
 uniform float uTime;
+uniform float uMorphProgress;
+
+varying vec3 vPosition;
+varying vec2 vUv;
+varying float vDisplacement;
+
+// =================== Custom Noise-Based Texture Functions =================== //
+
+int windows = 0;
+vec2 m = vec2(.7,.8);
+
+float hash( in vec2 p ) 
+{
+    return fract(sin(p.x*15.32+p.y*5.78) * 43758.236237153);
+}
+
+
+vec2 hash2(vec2 p)
+{
+	return vec2(hash(p*.754),hash(1.5743*p.yx+4.5891))-.5;
+}
+
+vec2 hash2b( vec2 p )
+{
+    vec2 q = vec2( dot(p,vec2(127.1,311.7)), 
+				   dot(p,vec2(269.5,183.3)) );
+	return fract(sin(q)*43758.5453)-.5;
+}
+
+
+mat2 m2= mat2(.8,.6,-.6,.8);
+
+// Gabor/Voronoi mix 3x3 kernel (some artifacts for v=1.)
+float gavoronoi3(in vec2 p)
+{    
+    vec2 ip = floor(p);
+    vec2 fp = fract(p);
+    float f = 3.0*PI;//frequency
+    float v = 1.0;//cell variability <1.
+    float dv = 0.0;//direction variability <1.
+    vec2 dir = m;//vec2(.7,.7); += cos(uTime * 0.3)
+    float va = 0.0;
+   	float wt = 0.0;
+    for (int i=-1; i<=1; i++) 
+	for (int j=-1; j<=1; j++) 
+	{		
+    vec2 o = vec2(i, j)-.5;
+    vec2 h = hash2(ip - o);
+    vec2 pp = fp +o;
+    float d = dot(pp, pp);
+    float w = exp(-d*4.);
+    wt +=w;
+    h = dv*h+dir;//h=normalize(h+dir);
+    va += cos(dot(pp,h)*f/v)*w;
+	}    
+    return va/wt;
+}
+
+float noise(vec2 p){
+    return gavoronoi3(p);
+}
+
+float map(vec2 p){
+    return 2.*abs( noise(p*2.));
+}
+
+vec3 nor(in vec2 p)
+{
+	const vec2 e = vec2(0.1, 0.0);
+	return -normalize(vec3(
+		map(p + e.xy) - map(p - e.xy),
+		map(p + e.yx) - map(p - e.yx),
+		1.0));
+}
+
+// =========================================================================== //
+
 
 float smoothMod(float axis, float amp, float rad) {
   float top = cos(PI * (axis / amp)) * sin(PI * (axis / amp));
@@ -174,15 +237,9 @@ float fit(float unscaled, float originalMin, float originalMax, float minAllowed
 }
 
 float wave(vec3 position){
-  return fit(smoothMod(position.y * 6.0, 1.0, 1.5), 0.35, 0.6, 0.0, 1.0);
+  return fit(smoothMod(position.x * 6.0, 1.0, 1.5), 0.35, 0.6, 0.0, 1.0);
 }
 
-// Marble-like texture with layered noise
-float marble(vec3 position){
-  float noise = cnoise(position * 5.0);
-  float stripes = sin((position.x + noise * 0.5) * 8.0) * 0.5 + 0.5;
-  return fit(stripes, 0.0, 1.0, 0.0, 1.0);
-}
 
 // Bumpy terrain with fractal noise
 float bumpy(vec3 position){
@@ -193,91 +250,42 @@ float bumpy(vec3 position){
   return fit(combined, 0.0, 1.0, 0.0, 1.0);
 }
 
-// Spiky protrusions with sharp noise peaks
-float spiky(vec3 position){
-  float noise = cnoise(position * 4.0);
-  float peaks = max(0.0, noise) * 2.0;
-  return fit(peaks, 0.0, 1.0, 0.0, 1.0);
+// Returns vec4: xyz = newPosition, w = displacement
+vec4 noisePattern1(vec3 coords){
+    vec3 noisePattern = vec3(cnoise(coords));
+    float pattern = wave(noisePattern);
+    float displacement = pattern / 2.0;
+    
+    vec3 newPosition = position + normal * displacement;
+    return vec4(newPosition, pattern);
 }
 
-// Cellular/coral-like pattern
-float cellular(vec3 position){
-  float n1 = cnoise(position * 2.0);
-  float n2 = cnoise(position * 3.5 + vec3(10.0));
-  float n3 = cnoise(position * 1.5 + vec3(20.0, 0.0, 0.0));
-  float pattern = abs(sin(n1 * 5.0) * sin(n2 * 4.0) * sin(n3 * 3.0));
-  return fit(pattern, 0.0, 1.0, 0.0, 1.0);
+// Returns vec4: xyz = newPosition, w = displacement
+vec4 noisePattern2(vec2 coords){
+    vec3 light = normalize(vec3(3., 2., -1.));
+    vec2 animatedCoords = coords + uTime * 0.1;
+    float noise = dot(nor(animatedCoords), light);
+    float displacement = clamp(noise * 0.5 + 0.5, 0.0, 5.0);
+    
+    vec3 newPosition = position + normal * clamp(noise, 0.0, 0.1);
+    return vec4(newPosition, displacement);
 }
 
-// Organic flowing shapes
-float organic(vec3 position){
-  float time_offset = uTime * 0.3;
-  float n1 = cnoise(position * 2.0 + vec3(time_offset));
-  float n2 = cnoise(position * 3.0 - vec3(time_offset * 0.5));
-  float flow = abs(n1 * n2);
-  return fit(flow, 0.0, 1.0, 0.0, 1.0);
+vec4 noisePattern3(vec3 coords){
+    vec3 noisePattern = vec3(cnoise(coords));
+    float pattern = bumpy(noisePattern);
+    float displacement = pattern / 2.0;
+    
+    vec3 newPosition = position + normal * displacement;
+    return vec4(newPosition, pattern);
 }
 
-// Crumpled/wrinkled texture
-float wrinkled(vec3 position){
-  float n1 = cnoise(position * 8.0);
-  float n2 = cnoise(position * 16.0);
-  float crumples = abs(n1) + abs(n2) * 0.5;
-  return fit(crumples, 0.0, 2.0, 0.0, 1.0);
+vec4 noisePattern4(vec2 coords){
+    vec3 light = normalize(vec3(3., 2., -1.));
+    vec2 animatedCoords = coords + uTime * 0.1;
+    float noise = dot(nor(animatedCoords), light);
+    float displacement = clamp(noise * 10.0 + 0.5, 0.0, 5.0);
+    
+    vec3 newPosition = position + normal * clamp(noise, 0.0, 0.1);
+    return vec4(newPosition, displacement);
 }
-
-// Cloudy/misty pattern
-float cloudy(vec3 position){
-  float n1 = cnoise(position * 1.5);
-  float n2 = cnoise(position * 3.0);
-  float clouds = (n1 + n2) * 0.5 + 0.5;
-  return fit(clouds, 0.0, 1.0, 0.0, 1.0);
-}
-
-// Ridge-like mountain pattern
-float ridges(vec3 position){
-  float noise = cnoise(position * 3.5);
-  float ridge = abs(noise) * 2.0;
-  float ridged = fit(ridge, 0.0, 1.0, 0.0, 1.0);
-  return ridged;
-}
-
-// Wind-swept dunes with soft bands
-float dunes(vec3 position){
-  float n = cnoise(position * 1.5);
-  float bands = sin(position.z * 3.5 + n * 2.0) * 0.5 + 0.5;
-  return fit(bands, 0.0, 1.0, 0.0, 1.0);
-}
-
-// Radial ripples like water rings
-float ripples(vec3 position){
-  float r = length(position.xz);
-  float rings = sin(r * 8.0 + cnoise(position * 2.5) * 2.0) * 0.5 + 0.5;
-  return fit(rings, 0.0, 1.0, 0.0, 1.0);
-}
-
-// Lava-like flowing surface
-float lava(vec3 position){
-  float t = uTime * 0.2;
-  float base = cnoise(position * 1.2 + vec3(t));
-  float detail = cnoise(position * 4.0 - vec3(t * 1.5)) * 0.4;
-  float heat = abs(base + detail);
-  return clamp(heat, 0.0, 1.0);
-}
-
-// Cracked surface with thin creases
-float cracks(vec3 position){
-  float n = abs(cnoise(position * 5.0));
-  float crack = 1.0 - smoothstep(0.0, 0.15, n);
-  return crack;
-}
-
-// Folded cloth-like ridges
-float folds(vec3 position){
-  float n = cnoise(position * 2.5);
-  float fold = abs(sin(position.x * 2.0 + n * 3.0)) * 0.7 + 0.15;
-  return clamp(fold, 0.0, 1.0);
-}
-
-
-varying float vDisplacement;
