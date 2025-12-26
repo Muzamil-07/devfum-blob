@@ -18,6 +18,7 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
   const [spinDirection, setSpinDirection] = useState(1);
   const [dragOffsetX, setDragOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const scrollTimeoutRef = useRef(null);
 
   const wrapPattern = (value) => ((value % PATTERN_COUNT) + PATTERN_COUNT) % PATTERN_COUNT;
 
@@ -29,9 +30,9 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
   const handlePointerMove = (event) => {
     if (dragStartX.current === null || !isDragging) return;
     const deltaX = event.clientX - dragStartX.current;
-    // Map drag distance to a smooth X offset (clamped for natural feel)
-    const maxOffset = 0.8;
-    const sensitivity = 0.003;
+    // Map drag distance to a very subtle X offset (reduced for smoother feel)
+    const maxOffset = 0.3;
+    const sensitivity = 0.0008;
     const offset = Math.max(-maxOffset, Math.min(maxOffset, deltaX * sensitivity));
     setDragOffsetX(offset);
   };
@@ -53,6 +54,35 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
     }
   };
 
+  // Handle scroll to change patterns
+  const handleWheel = (event) => {
+    event.preventDefault();
+    
+    // Debounce scroll to prevent rapid pattern changes
+    if (scrollTimeoutRef.current) return;
+    
+    const direction = event.deltaY > 0 ? 1 : -1;
+    setSpinDirection(direction);
+    
+    if (typeof onPatternChange === "function") {
+      onPatternChange((prev) => wrapPattern(prev + direction));
+    }
+    
+    // Set a cooldown before next scroll triggers pattern change
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollTimeoutRef.current = null;
+    }, 400);
+  };
+
+  // Cleanup scroll timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div
       style={{ width: "100vw", height: "100vh", background: "white" }}
@@ -60,6 +90,7 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onWheel={handleWheel}
     >
       <Canvas>
         <Environment preset="studio" />
