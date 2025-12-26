@@ -191,6 +191,9 @@ float tnoise(vec3 p) {
 int windows = 0;
 vec2 m = vec2(.7,.8);
 
+// Forward declarations for helpers used below
+float fbm(vec3 p);
+
 float hash( in vec2 p ) 
 {
     return fract(sin(p.x*15.32+p.y*5.78) * 43758.236237153);
@@ -330,21 +333,56 @@ vec4 noisePattern2(vec2 coords){
 vec4 noisePattern3(vec3 coords){
   vec3 tcoords = coords * 16.0;
   tcoords.z += sin(uTime) * 1.4;
-  float pattern = tnoise(tcoords) * 0.2;
-  float proximity = abs(coords.x - (.5 + sin(uTime)/(22. * 1.2) ));
+  float noiseValue = 22.0;
+  float spread = 1.5;
+  float displacement = 0.6;
+  float pattern = tnoise(tcoords) * displacement;
+  float proximity = abs(coords.x - (.5 + sin(uTime)/(noiseValue * spread) ));
 
-  vec3 full = pattern * vec3(clamp(.23 * 1.2 - proximity , 0., 1.));
+  vec3 full = pattern * vec3(clamp(.23 * spread - proximity , 0., 1.));
   vec3 newPosition = position + normal * full; 
   return vec4(newPosition, pattern);
 }
 
-vec4 noisePattern4(vec2 coords){
-    vec3 light = normalize(vec3(3., 2., -1.));
-	  float noise = dot(nor(coords), light);
+// (Removed) noisePattern4: deprecated
 
-    float displacement = clamp(noise, 0.0, 0.5);
-    
-    vec3 newPosition = position + normal * clamp(1.0 - noise, 0.0, 0.3);
-    
-    return vec4(newPosition, displacement);
+// Fractal Brownian Motion helper (uses classic Perlin)
+float fbm(vec3 p) {
+  float f = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    f += a * abs(cnoise(p));
+    p *= 2.0;
+    a *= 0.5;
+  }
+  return f;
 }
+
+// (Removed) ridged(): deprecated
+
+// (Removed) noisePattern5: deprecated
+
+// Returns vec4: xyz = newPosition, w = displacement
+// Domain-warped noise: swirly, organic flows
+vec4 noisePattern6(vec3 coords){
+  float ang = uTime * 0.2;
+  mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+  vec2 w2 = rot * vec2(tnoise(coords * 4.0), tnoise(coords * 4.0 + 123.4)) * 0.6;
+  vec3 warp = coords + vec3(w2, tnoise(coords * 4.0 - 56.7) * 0.6);
+  float base = cnoise(warp * 2.5);
+  float pattern = fit(base, -1.0, 1.0, 0.0, 1.0);
+  vec3 newPosition = position + normal * (pattern * 0.5);
+  return vec4(newPosition, pattern);
+}
+
+// Returns vec4: xyz = newPosition, w = displacement
+// Marble stripes with animated veins
+vec4 noisePattern7(vec3 coords){
+  float veins = fbm(coords * 2.0 + vec3(uTime * 0.3));
+  float stripes = sin(coords.x * 4.0 + veins * 3.0);
+  float pattern = abs(stripes);
+  vec3 newPosition = position + normal * (pattern * 0.35);
+  return vec4(newPosition, pattern);
+}
+
+// (Removed) noisePattern8: deprecated

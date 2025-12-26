@@ -33,7 +33,13 @@ export const PatternButtons = ({ onPatternChange }) => {
         className={`pattern-button ${activePattern === 3 ? 'active' : ''}`}
         onClick={() => handlePatternClick(3)}
       >
-        Pattern 4
+        Domain Warp
+      </button>
+      <button
+        className={`pattern-button ${activePattern === 4 ? 'active' : ''}`}
+        onClick={() => handlePatternClick(4)}
+      >
+        Marble Veins
       </button>
     </div>
   );

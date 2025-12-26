@@ -1,5 +1,6 @@
 import { Environment, OrbitControls } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader } from "@react-three/fiber";
+import * as THREE from "three";
 import vertexPars from "./vertex_pars.glsl?raw";
 import vertexMain from "./vertex_main.glsl?raw";
 import fragmentPars from "./fragment_pars.glsl?raw";
@@ -17,9 +18,9 @@ export const ThreeCanvas = ({ targetPattern }) => {
     >
       <Canvas>
         <Environment preset="studio" />
-        <ambientLight color={"#526cff"} intensity={0.5} />
+        <ambientLight color={"#ffffff"} intensity={0.5} />
         <directionalLight
-          color={"#4255ff"}
+          color={"#ffffff"}
           position={[2, 2, 2]}
           intensity={0.6}
         />
@@ -27,13 +28,13 @@ export const ThreeCanvas = ({ targetPattern }) => {
         <Sphere targetPattern={targetPattern} />
 
         {/* post processing */}
-        <EffectComposer multisampling={4}>
+        {/* <EffectComposer multisampling={1}>
           <Bloom
-            intensity={0.7}
-            luminanceThreshold={0.4}
-            luminanceSmoothing={0.4}
+            intensity={0.2}
+            luminanceThreshold={0.1}
+            luminanceSmoothing={0.1}
           />
-        </EffectComposer>
+        </EffectComposer> */}
       </Canvas>
     </div>
   );
@@ -44,6 +45,18 @@ const Sphere = ({ targetPattern }) => {
   const materiaRef = useRef();
   const morphProgressRef = useRef(0);
   const [currentPattern, setCurrentPattern] = useState(0);
+  
+  // Load textures with appropriate loaders
+  const diffuseMap1 = useLoader(THREE.TextureLoader, '/grad1.png');
+  const diffuseMap2 = useLoader(THREE.TextureLoader, '/grad2.png');
+  const diffuseMap3 = useLoader(THREE.TextureLoader, '/grad3.png');
+  const diffuseMap4 = useLoader(THREE.TextureLoader, '/grad4.png');
+  const diffuseMap5 = useLoader(THREE.TextureLoader, '/grad5.png');
+
+  // Combine diffuse maps into an array for easy access in shader
+  const diffuseMaps = [diffuseMap1, diffuseMap2, diffuseMap3, diffuseMap4, diffuseMap5];
+  
+  // Set texture wrapping to repeat mode for seamless wrapping
   
   // Smoothly animate morphProgress when target changes
   useEffect(() => {
@@ -67,8 +80,8 @@ const Sphere = ({ targetPattern }) => {
     
     // Smoothly transition morphProgress
     if (material.userData.shader.uniforms.uMorphProgress) {
-      // Map pattern index (0-3) to morphProgress value (0-3)
-      const target = targetPattern;
+      // Map pattern index (0–4) to morphProgress value (0–4)
+      const target = Math.max(0, Math.min(4, targetPattern));
       const current = morphProgressRef.current;
       const transitionSpeed = 1.5; // Adjust for faster/slower transitions
       
@@ -84,10 +97,16 @@ const Sphere = ({ targetPattern }) => {
 
   return (
     <mesh ref={meshRef}>
-      <icosahedronGeometry args={[2, 300]} />
+      <icosahedronGeometry args={[2, 300]} rotateX={Math.PI} />
+      {/* <sphereGeometry args={[2, 300, 300]} /> */}
+      {/* <torusKnotGeometry args={[1, 0.4, 3000, 3000]} /> */}
       <meshStandardMaterial
         ref={materiaRef}
-        color="#3f5cff"
+        map={diffuseMaps[currentPattern]}
+        // normalMap={normalMap}
+        // roughnessMap={roughnessMap}
+        // displacementMap={displacementMap}
+        displacementScale={0.1}
         roughness={0.35}
         metalness={0.15}
         onBeforeCompile={(shader) => {
