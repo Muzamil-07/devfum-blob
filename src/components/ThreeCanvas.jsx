@@ -16,17 +16,32 @@ const PATTERN_COUNT = 5;
 export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
   const dragStartX = useRef(null);
   const [spinDirection, setSpinDirection] = useState(1);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const wrapPattern = (value) => ((value % PATTERN_COUNT) + PATTERN_COUNT) % PATTERN_COUNT;
 
   const handlePointerDown = (event) => {
     dragStartX.current = event.clientX;
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (event) => {
+    if (dragStartX.current === null || !isDragging) return;
+    const deltaX = event.clientX - dragStartX.current;
+    // Map drag distance to a smooth X offset (clamped for natural feel)
+    const maxOffset = 0.8;
+    const sensitivity = 0.003;
+    const offset = Math.max(-maxOffset, Math.min(maxOffset, deltaX * sensitivity));
+    setDragOffsetX(offset);
   };
 
   const handlePointerUp = (event) => {
     if (dragStartX.current === null) return;
     const deltaX = event.clientX - dragStartX.current;
     dragStartX.current = null;
+    setIsDragging(false);
+    setDragOffsetX(0); // Reset offset - will animate back to center
 
     const threshold = 25;
     if (Math.abs(deltaX) < threshold) return;
@@ -42,6 +57,7 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
     <div
       style={{ width: "100vw", height: "100vh", background: "white" }}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
@@ -58,6 +74,8 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
           targetPattern={targetPattern}
           patternCount={PATTERN_COUNT}
           spinDirection={spinDirection}
+          dragOffsetX={dragOffsetX}
+          isDragging={isDragging}
         />
 
         {/* post processing */}
@@ -73,12 +91,14 @@ export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
   );
 };
 
-const Sphere = ({ targetPattern, patternCount, spinDirection }) => {
+const Sphere = ({ targetPattern, patternCount, spinDirection, dragOffsetX, isDragging }) => {
   const meshRef = useRef();
   const materiaRef = useRef();
   const morphProgressRef = useRef(0);
   const [currentPattern, setCurrentPattern] = useState(0);
   const spinTweenRef = useRef(null);
+  const positionTweenRef = useRef(null);
+  const morphTweenRef = useRef(null);
   
   // Load textures with appropriate loaders
   const diffuseMap1 = useLoader(THREE.TextureLoader, '/grad1.png');
@@ -99,6 +119,59 @@ const Sphere = ({ targetPattern, patternCount, spinDirection }) => {
       setCurrentPattern(wrapped);
     }
   }, [targetPattern, patternCount, currentPattern]);
+
+  // Animate X position based on drag with smooth follow during drag
+  useEffect(() => {
+    if (!meshRef.current) return;
+    
+    if (positionTweenRef.current) {
+      positionTweenRef.current.kill();
+    }
+
+    if (isDragging) {
+      // During drag: smoothly follow the drag offset
+      positionTweenRef.current = gsap.to(meshRef.current.position, {
+        duration: 0.15,
+        x: dragOffsetX,
+        ease: "power2.out",
+      });
+    } else {
+      // After drag release: smoothly return to center with elastic effect
+      positionTweenRef.current = gsap.to(meshRef.current.position, {
+        duration: 0.8,
+        x: 0,
+        ease: "elastic.out(1, 0.5)",
+      });
+    }
+
+    return () => {
+      if (positionTweenRef.current) positionTweenRef.current.kill();
+    };
+  }, [dragOffsetX, isDragging]);
+
+  // Smooth morph transition with GSAP
+  useEffect(() => {
+    if (morphTweenRef.current) {
+      morphTweenRef.current.kill();
+    }
+
+    const target = Math.max(0, Math.min(patternCount - 1, targetPattern));
+    
+    morphTweenRef.current = gsap.to(morphProgressRef, {
+      duration: 1.2,
+      current: target,
+      ease: "power3.inOut",
+      onUpdate: () => {
+        if (materiaRef.current?.userData?.shader?.uniforms?.uMorphProgress) {
+          materiaRef.current.userData.shader.uniforms.uMorphProgress.value = morphProgressRef.current;
+        }
+      }
+    });
+
+    return () => {
+      if (morphTweenRef.current) morphTweenRef.current.kill();
+    };
+  }, [targetPattern, patternCount]);
 
   useEffect(() => {
     if (!meshRef.current) return;
@@ -131,22 +204,6 @@ const Sphere = ({ targetPattern, patternCount, spinDirection }) => {
     // Update time uniform (slowed down)
     if (material.userData.shader.uniforms.uTime) {
       material.userData.shader.uniforms.uTime.value += delta;
-    }
-    
-    // Smoothly transition morphProgress
-    if (material.userData.shader.uniforms.uMorphProgress) {
-      // Map pattern index (0–4) to morphProgress value (0–4)
-      const target = Math.max(0, Math.min(patternCount - 1, targetPattern));
-      const current = morphProgressRef.current;
-      const transitionSpeed = 1.5; // Adjust for faster/slower transitions
-      
-      if (Math.abs(target - current) > 0.001) {
-        morphProgressRef.current += (target - current) * delta * transitionSpeed;
-      } else {
-        morphProgressRef.current = target;
-      }
-      
-      material.userData.shader.uniforms.uMorphProgress.value = morphProgressRef.current;
     }
   });
 
