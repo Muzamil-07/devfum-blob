@@ -8,13 +8,42 @@ import fragmentMain from "./fragment_main.glsl?raw";
 // import vertexShader from "./Sphere.vertex.glsl?raw";
 // import fragmentShader from "./Sphere.fragment.glsl?raw";
 import { useRef, useState, useEffect } from "react";
+import gsap from "gsap";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 
-export const ThreeCanvas = ({ targetPattern }) => {
+const PATTERN_COUNT = 5;
+
+export const ThreeCanvas = ({ targetPattern, onPatternChange }) => {
+  const dragStartX = useRef(null);
+  const [spinDirection, setSpinDirection] = useState(1);
+
+  const wrapPattern = (value) => ((value % PATTERN_COUNT) + PATTERN_COUNT) % PATTERN_COUNT;
+
+  const handlePointerDown = (event) => {
+    dragStartX.current = event.clientX;
+  };
+
+  const handlePointerUp = (event) => {
+    if (dragStartX.current === null) return;
+    const deltaX = event.clientX - dragStartX.current;
+    dragStartX.current = null;
+
+    const threshold = 25;
+    if (Math.abs(deltaX) < threshold) return;
+
+    const direction = deltaX > 0 ? 1 : -1;
+    setSpinDirection(direction);
+    if (typeof onPatternChange === "function") {
+      onPatternChange((prev) => wrapPattern(prev + direction));
+    }
+  };
+
   return (
     <div
-      style={{ width: "100vw", height: "100vh", background: "linear-gradient(to top, #000000 0%, #060912 55%, #0e1324 100%)"
-, }}
+      style={{ width: "100vw", height: "100vh", background: "white" }}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
     >
       <Canvas>
         <Environment preset="studio" />
@@ -24,8 +53,12 @@ export const ThreeCanvas = ({ targetPattern }) => {
           position={[2, 2, 2]}
           intensity={0.6}
         />
-        <OrbitControls makeDefault />
-        <Sphere targetPattern={targetPattern} />
+        {/* <OrbitControls makeDefault /> */}
+        <Sphere
+          targetPattern={targetPattern}
+          patternCount={PATTERN_COUNT}
+          spinDirection={spinDirection}
+        />
 
         {/* post processing */}
         {/* <EffectComposer multisampling={1}>
@@ -40,11 +73,12 @@ export const ThreeCanvas = ({ targetPattern }) => {
   );
 };
 
-const Sphere = ({ targetPattern }) => {
+const Sphere = ({ targetPattern, patternCount, spinDirection }) => {
   const meshRef = useRef();
   const materiaRef = useRef();
   const morphProgressRef = useRef(0);
   const [currentPattern, setCurrentPattern] = useState(0);
+  const spinTweenRef = useRef(null);
   
   // Load textures with appropriate loaders
   const diffuseMap1 = useLoader(THREE.TextureLoader, '/grad1.png');
@@ -60,10 +94,31 @@ const Sphere = ({ targetPattern }) => {
   
   // Smoothly animate morphProgress when target changes
   useEffect(() => {
-    if (targetPattern !== currentPattern) {
-      setCurrentPattern(targetPattern);
+    const wrapped = ((targetPattern % patternCount) + patternCount) % patternCount;
+    if (wrapped !== currentPattern) {
+      setCurrentPattern(wrapped);
     }
-  }, [targetPattern, currentPattern]);
+  }, [targetPattern, patternCount, currentPattern]);
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+    if (spinTweenRef.current) {
+      spinTweenRef.current.kill();
+    }
+    const direction = spinDirection >= 0 ? 1 : -1;
+    const mesh = meshRef.current;
+    spinTweenRef.current = gsap.to(mesh.rotation, {
+      duration: 0.8,
+      y: mesh.rotation.y + direction * Math.PI * 2,
+      x: mesh.rotation.x + direction * 0.15,
+      z: mesh.rotation.z - direction * 0.15,
+      ease: "power2.out",
+    });
+
+    return () => {
+      if (spinTweenRef.current) spinTweenRef.current.kill();
+    };
+  }, [targetPattern, spinDirection]);
 
 
   useFrame((state, delta) => {
@@ -81,7 +136,7 @@ const Sphere = ({ targetPattern }) => {
     // Smoothly transition morphProgress
     if (material.userData.shader.uniforms.uMorphProgress) {
       // Map pattern index (0–4) to morphProgress value (0–4)
-      const target = Math.max(0, Math.min(4, targetPattern));
+      const target = Math.max(0, Math.min(patternCount - 1, targetPattern));
       const current = morphProgressRef.current;
       const transitionSpeed = 1.5; // Adjust for faster/slower transitions
       
